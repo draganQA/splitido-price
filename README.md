@@ -44,6 +44,6 @@ and its crawlers read the chains' own price lists, which the law keeps public.
 
 ## More countries
 
-Serbia (weekly CSV on the open data portal), North Macedonia and others get their own
+Serbia (weekly CSV on the open data portal), Macedonia and others get their own
 `zbiralnik_<country>.py` and a job in the workflow. They write to the same tables with
 their own `drzava`.

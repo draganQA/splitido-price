@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Public shop prices for North Macedonia, from the chains' own price lists.
+Public shop prices for Macedonia, from the chains' own price lists.
 
 Since 18 April 2025 shops must publish their prices on their websites every
 day (by 10:00), per shop. There is no common format and no barcode, so each
