@@ -4,7 +4,11 @@ name: Public prices
 # chain and product to Supabase. Free on a public repository.
 on:
   schedule:
-    - cron: "40 5 * * *"   # after the lists are in (they are published by 08:00 at the latest)
+    # cijene.dev finishes a day's archive around 22:00 Croatian time. The evening run
+    # takes the day's finished archive, so a new offer shows the same night; the morning
+    # one is a backup for a late archive. GitHub may start scheduled jobs a few minutes late.
+    - cron: "30 21 * * *"
+    - cron: "40 5 * * *"
   workflow_dispatch:
 
 permissions:
