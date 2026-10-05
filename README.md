@@ -5,12 +5,17 @@ them into one small table in Splitido's Supabase: for each product, its price in
 each chain (and whether the chain has it on offer), so the app can show
 "today in Croatia: Metro 1,10 € · Lidl 1,19 € · Konzum 1,25 €".
 
-This is a **public** repository on purpose: public repositories get free GitHub Actions
-minutes. There is nothing secret in it. The two secrets it needs live in the repository's
-settings (Settings → Secrets and variables → Actions), never in a file:
+Meant to live in its **own public repository** (public repositories get free
+GitHub Actions minutes). Copy this folder's contents there:
+
+    zbiralnik.py
+    .github/workflows/dnevno.yml
+    README.md
+
+then add two repository secrets (Settings → Secrets and variables → Actions):
 
 - `SUPABASE_URL` (like `https://xxxx.supabase.co`)
-- `SUPABASE_SERVICE_ROLE_KEY` (Project settings → API → `service_role`)
+- `SUPABASE_SERVICE_ROLE_KEY` (Project settings → API → `service_role`; never commit it)
 
 The tables and functions are created by Splitido's migration
 `20260101000089_javne_cene.sql`; run it first.

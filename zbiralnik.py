@@ -34,6 +34,8 @@ import urllib.parse
 import urllib.request
 import zipfile
 
+from skupno import pisi, pocisti
+
 LIST_URL = "https://api.cijene.dev/v0/list"
 DRZAVA = "HR"
 # Chains in this order win when the same barcode is named differently.
@@ -43,7 +45,6 @@ VERIGE = {
     "metro": "Metro", "ntl": "NTL", "ktc": "KTC", "trgocentar": "Trgocentar", "zabac": "Žabac",
     "vrutak": "Vrutak", "roto": "Roto",
 }
-PACKET = 1000
 
 
 def decimal(s):
@@ -152,27 +153,6 @@ def agregiraj(pot_zip):
     return izdelki, cene, stevilo
 
 
-def pisi(url, kljuc, tabela, vrstice, konflikt):
-    pot = f"{url}/rest/v1/{tabela}?on_conflict={konflikt}"
-    for i in range(0, len(vrstice), PACKET):
-        telo = json.dumps(vrstice[i:i + PACKET]).encode()
-        zahteva = urllib.request.Request(pot, data=telo, method="POST", headers={
-            "apikey": kljuc, "Authorization": f"Bearer {kljuc}", "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates,return=minimal",
-        })
-        urllib.request.urlopen(zahteva, timeout=120).read()
-        if (i // PACKET) % 20 == 0:
-            print(f"  {tabela}: {min(i + PACKET, len(vrstice))}/{len(vrstice)}", flush=True)
-
-
-def pocisti(url, kljuc, datum):
-    meja = (datetime.date.fromisoformat(datum) - datetime.timedelta(days=3)).isoformat()
-    q = urllib.parse.urlencode({"drzava": f"eq.{DRZAVA}", "posodobljeno": f"lt.{meja}"})
-    zahteva = urllib.request.Request(f"{url}/rest/v1/javne_cene?{q}", method="DELETE", headers={
-        "apikey": kljuc, "Authorization": f"Bearer {kljuc}", "Prefer": "return=minimal"})
-    urllib.request.urlopen(zahteva, timeout=120).read()
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--archive", help="a ZIP already downloaded (otherwise the newest is downloaded)")
@@ -205,7 +185,7 @@ def main():
     kljuc = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     pisi(url, kljuc, "javni_izdelki", list(izdelki.values()), "drzava,ean")
     pisi(url, kljuc, "javne_cene", cene, "drzava,ean,veriga")
-    pocisti(url, kljuc, datum)
+    pocisti(url, kljuc, datum, DRZAVA)
     print("Done.")
 
 
