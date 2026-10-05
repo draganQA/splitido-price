@@ -1,0 +1,36 @@
+name: Public prices
+
+# Once a day: reads the day's price lists and writes one current price per
+# chain and product to Supabase. Free on a public repository.
+on:
+  schedule:
+    - cron: "40 5 * * *"   # after the lists are in (they are published by 08:00 at the latest)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # only to keep the schedule alive, see the last step
+
+jobs:
+  hr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect and write
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python zbiralnik.py
+      # GitHub switches scheduled workflows off after 60 days without activity in
+      # the repository: a one-line status file keeps it alive.
+      - name: Keep the schedule alive
+        run: |
+          date -u +"%Y-%m-%dT%H:%MZ" > STATUS
+          git config user.name "cene-bot"
+          git config user.email "cene-bot@users.noreply.github.com"
+          git add STATUS
+          git commit -m "Last run: $(cat STATUS)" || true
+          git push || true
