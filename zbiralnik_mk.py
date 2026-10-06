@@ -152,7 +152,9 @@ def preberi_stokomak():
 def preberi_kam_pdf(besedilo):
     """The products of a Kam price list as text (pdftotext -layout): one block of lines per product,
     the name in the left column over several lines, the prices on the block's first line."""
-    vrstice = besedilo.split("\n")
+    # the heading of every page ("Датум и време на последно ажурирање...") sits right above the first
+    # product of the page and must not become part of its name
+    vrstice = ["" if "Датум и време на последно" in v else v for v in besedilo.split("\n")]
     stolpec = next((v.index("Продажна") for v in vrstice if "Продажна" in v), None)
     if not stolpec:
         return []
