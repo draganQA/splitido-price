@@ -1,0 +1,24 @@
+name: Public prices (Serbia)
+
+# Once a day: the chains publish their price lists on the Open Data Portal every
+# Monday by 14:00 Serbian time (and keep the files current); this reads them in
+# the afternoon. Free on a public repository.
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+jobs:
+  rs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect and write
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python zbiralnik_rs.py
