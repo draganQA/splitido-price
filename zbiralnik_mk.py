@@ -14,9 +14,10 @@ main, the same in all its shops). Only the standard library.
   Stokomak   an HTML table per shop on its price portal, 100 products to a page
   Kam        a PDF per shop (listed by a JSON call on kam.com.mk), read with pdftotext
 
-Kipper's list is filled in by a script from an interface that wants a login, and
-Tinex has not been looked at yet; they come when someone finds out how to read
-them politely.
+  Kipper     the page's own table is filled by a call to its admin-ajax.php (500 products at a time)
+
+Tinex publishes its list on ceni.tinex.mk, which doesn't answer from everywhere (or
+at all); it comes when it does.
 
 Every product of a chain is kept (one row per product and chain), because the
 products can only be matched by name; an offer is a regular price above the
@@ -38,6 +39,7 @@ import json
 import subprocess
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from skupno import decimal, pisi, pocisti
@@ -50,6 +52,8 @@ VERO_SHOP = "91"   # Vero 2, Karpos
 STOKOMAK = "https://stokomak.proverkanaceni.mk/index.php?page={page}&perPage=100&search=&org={shop}"
 STOKOMAK_SHOP = "1"   # Kisela Voda
 KAM = "https://kam.com.mk"
+KIPPER = "https://kipper.mk/wp-admin/admin-ajax.php"
+KIPPER_SHOP = "8211"   # Kipper 041, Kumanovo: the id of the shop's page
 
 
 def prenesi(url, poskusov=3):
@@ -199,8 +203,34 @@ def preberi_kam():
     return preberi_kam_pdf(besedilo)
 
 
+
+def preberi_kipper():
+    izhod = []
+    start = 0
+    while True:
+        telo = urllib.parse.urlencode({"action": "get_products_data", "post_id": KIPPER_SHOP, "draw": 1, "start": start, "length": 500}).encode()
+        zahteva = urllib.request.Request(KIPPER, data=telo, headers={"User-Agent": UA})
+        with urllib.request.urlopen(zahteva, timeout=120) as r:
+            odgovor = json.loads(r.read().decode("utf-8"))
+        vrstice = odgovor.get("data") or []
+        for p in vrstice:
+            if p.get("product_status") != "D":
+                continue
+            cena_zdaj = decimal(str(p.get("product_price") or ""))
+            redna = decimal(str(p.get("product_price_normal") or ""))
+            i = izdelek("Kipper", p.get("product_name"), cena_zdaj, redna, p.get("product_subgroup"))
+            if i:
+                izhod.append(i)
+        start += 500
+        if len(vrstice) < 500 or start >= int(odgovor.get("recordsTotal") or 0):
+            break
+        time.sleep(1)
+    return izhod
+
+
 VERIGE = [("Ramstore", preberi_ramstore, 8000), ("Vero", preberi_vero, 5000),
-          ("Stokomak", preberi_stokomak, 2000), ("Kam", preberi_kam, 800)]
+          ("Stokomak", preberi_stokomak, 2000), ("Kam", preberi_kam, 800),
+          ("Kipper", preberi_kipper, 1500)]
 
 
 def zberi():
