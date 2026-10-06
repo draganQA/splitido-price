@@ -11,8 +11,12 @@ main, the same in all its shops). Only the standard library.
   Ramstore   one HTML table per shop (a single page)
   Vero       an HTML table per shop, 500 products to a page (<shop>_<page>.html)
 
-Kipper, Stokomak, Kam and Tinex load their lists with scripts or block plain
-requests; they come when someone finds out how to read them politely.
+  Stokomak   an HTML table per shop on its price portal, 100 products to a page
+  Kam        a PDF per shop (listed by a JSON call on kam.com.mk), read with pdftotext
+
+Kipper's list is filled in by a script from an interface that wants a login, and
+Tinex has not been looked at yet; they come when someone finds out how to read
+them politely.
 
 Every product of a chain is kept (one row per product and chain), because the
 products can only be matched by name; an offer is a regular price above the
@@ -30,6 +34,9 @@ import os
 import re
 import sys
 import time
+import json
+import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -40,6 +47,9 @@ UA = "Mozilla/5.0 (compatible; SplitidoPriceBot/1.0; +https://github.com/draganQ
 RAMSTORE = "https://ramstore.com.mk/marketi/ramstore-siti-mol/"
 VERO = "https://pricelist.vero.com.mk/{shop}_{page}.html"
 VERO_SHOP = "91"   # Vero 2, Karpos
+STOKOMAK = "https://stokomak.proverkanaceni.mk/index.php?page={page}&perPage=100&search=&org={shop}"
+STOKOMAK_SHOP = "1"   # Kisela Voda
+KAM = "https://kam.com.mk"
 
 
 def prenesi(url, poskusov=3):
@@ -115,7 +125,80 @@ def preberi_vero():
     return izhod
 
 
-VERIGE = [("Ramstore", preberi_ramstore, 8000), ("Vero", preberi_vero, 5000)]
+def cena(s):
+    """A price with its unit as printed ("71 ден.", "1.299ден.") -> float, or None."""
+    m = re.search(r"\d[\d.,]*", s or "")
+    return decimal(m.group()) if m else None
+
+
+def preberi_stokomak():
+    izhod = []
+    for stran in range(1, 200):
+        s = prenesi(STOKOMAK.format(page=stran, shop=STOKOMAK_SHOP))
+        vrstice = [c for c in vrstice_tabele(s or "") if len(c) >= 6]
+        if not vrstice:
+            break
+        for c in vrstice:
+            # name, price now, unit price, description, available, regular price, price with discount, type, duration
+            if c[4].lower() not in ("да", "da"):
+                continue
+            i = izdelek("Stokomak", c[0], cena(c[1]), cena(c[5]), c[3])
+            if i:
+                izhod.append(i)
+        time.sleep(1)
+    return izhod
+
+
+def preberi_kam_pdf(besedilo):
+    """The products of a Kam price list as text (pdftotext -layout): one block of lines per product,
+    the name in the left column over several lines, the prices on the block's first line."""
+    vrstice = besedilo.split("\n")
+    stolpec = next((v.index("Продажна") for v in vrstice if "Продажна" in v), None)
+    if not stolpec:
+        return []
+    izhod = []
+    blok = []
+    for v in vrstice + [""]:
+        if v.strip():
+            blok.append(v)
+            continue
+        if blok:
+            glava = next((b for b in blok if re.match(r"\s*\d[\d.,]*\s*ден\.", b[stolpec - 2:stolpec + 16])), None)
+            if glava:
+                ime = " ".join(" ".join(b[:stolpec - 2].split()) for b in blok if b[:stolpec - 2].strip())
+                cene = re.findall(r"(\d[\d.,]*)\s*ден\.", glava[stolpec - 2:])
+                dostopno = re.search(r"\s(Да|Не)\s", glava[stolpec - 2:])
+                if cene and (not dostopno or dostopno.group(1) == "Да"):
+                    i = izdelek("Kam", ime, decimal(cene[0]), decimal(cene[1]) if len(cene) > 1 else None, None)
+                    if i:
+                        izhod.append(i)
+        blok = []
+    return izhod
+
+
+def preberi_kam():
+    zahteva = urllib.request.Request(f"{KAM}/ShopsWeb/LoadShopList", data=b"{}", method="POST",
+                                     headers={"User-Agent": UA, "Content-Type": "application/json"})
+    with urllib.request.urlopen(zahteva, timeout=120) as r:
+        trgovine = json.loads(r.read().decode("utf-8"))
+    pot = None
+    for t in sorted(trgovine, key=lambda t: t.get("Id") or 0):
+        if t.get("ShopFiles"):
+            pot = max(t["ShopFiles"], key=lambda f: f.get("Id") or 0)["RelativePath"]
+            break
+    if not pot:
+        raise RuntimeError("no price list file in the list of shops")
+    with tempfile.TemporaryDirectory() as mapa:
+        datoteka = f"{mapa}/kam.pdf"
+        zahteva = urllib.request.Request(f"{KAM}/{pot}", headers={"User-Agent": UA})
+        with urllib.request.urlopen(zahteva, timeout=180) as r, open(datoteka, "wb") as f:
+            f.write(r.read())
+        besedilo = subprocess.run(["pdftotext", "-layout", datoteka, "-"], check=True, capture_output=True).stdout.decode("utf-8", "replace")
+    return preberi_kam_pdf(besedilo)
+
+
+VERIGE = [("Ramstore", preberi_ramstore, 8000), ("Vero", preberi_vero, 5000),
+          ("Stokomak", preberi_stokomak, 2000), ("Kam", preberi_kam, 800)]
 
 
 def zberi():

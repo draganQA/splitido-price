@@ -1,6 +1,6 @@
 name: Public prices (Macedonia)
 
-# Once a day: the shops (Ramstore, Vero) must publish their price lists by
+# Once a day: the shops (Ramstore, Vero, Stokomak, Kam) must publish their price lists by
 # 10:00 local time; this reads them afterwards. Free on a public repository.
 on:
   schedule:
@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: PDF reader (Kam publishes PDF lists)
+        run: sudo apt-get install -y poppler-utils
       - name: Collect and write
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
