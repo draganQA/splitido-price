@@ -1,0 +1,24 @@
+name: Public prices (Bulgaria)
+
+# Once a day: kolkostruva.bg publishes the day's prices of the chains as one open-data
+# ZIP (ready in the evening); this reads the newest one late in the evening, UTC.
+# Free on a public repository.
+on:
+  schedule:
+    - cron: "30 22 * * *"
+  workflow_dispatch:
+
+jobs:
+  bg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect and write
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python zbiralnik_bg.py
