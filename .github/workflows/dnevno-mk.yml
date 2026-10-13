@@ -17,7 +17,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: PDF reader (Kam publishes PDF lists)
-        run: sudo apt-get install -y poppler-utils
+        # update first: the runner image's package index can be stale (404 on the .deb files)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
       - name: Collect and write
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
