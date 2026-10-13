@@ -50,7 +50,7 @@ VERIGE = [
     ("Бурлекс", "CBA", 800),
     ("МИНИМАРТ", "Minimart", 300),
     ("Lilly", "Lilly", 400),
-    ("ДМ България", "dm", 400),
+    ("ДМ България", "dm", 100),
 ]
 
 
@@ -170,8 +170,12 @@ def main():
     pisi(url, kljuc, "javne_cene", cene, "drzava,ean,veriga")
     pocisti(url, kljuc, datum_cen, DRZAVA)
     print("Done.")
+    # A chain that reports only part of its shops on some days (dm did: 24 shops, 267 products) is left out
+    # for the day and is no reason to fail the run: fail only when most chains are missing.
+    if napake and len(stevilo) < len(VERIGE) // 2 + 1:
+        sys.exit("Too many chains failed: " + "; ".join(napake))
     if napake:
-        sys.exit("Some chains failed: " + "; ".join(napake))
+        print("Some chains were left out today: " + "; ".join(napake))
 
 
 if __name__ == "__main__":
