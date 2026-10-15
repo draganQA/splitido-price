@@ -236,7 +236,7 @@ def v_vrstice(ime_verige, seznam):
     for koda, ime, znamka, kolicina, cena, akcija, redna in seznam:
         ean = id_izdelka(ime_verige.lower(), koda)
         izdelki[ean] = {"drzava": DRZAVA, "ean": ean, "ime": ime, "znamka": znamka, "kolicina": kolicina, "kategorija": None}
-        cene.append({"drzava": DRZAVA, "ean": ean, "veriga": ime_verige, "cena": cena, "akcija": akcija or None,
+        cene.append({"drzava": DRZAVA, "ean": ean, "veriga": ime_verige, "cena": cena, "akcija": bool(akcija),
                      "referencna": redna, "najnizja30": None, "sidrena": None})
     return izdelki, cene
 
