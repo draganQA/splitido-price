@@ -54,7 +54,7 @@ def prenesi(url, poskusi=3):
             with urllib.request.urlopen(zahteva, timeout=60) as r:
                 return r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
-            if e.code in (404, 410):
+            if e.code in (301, 302, 303, 307, 308, 404, 410):   # gone, or a redirect that loops (a broken link in a sitemap)
                 return None
             if e.code not in (429, 500, 502, 503, 504) or poskus == poskusi - 1:
                 raise
