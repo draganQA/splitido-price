@@ -44,7 +44,7 @@ VIRI = [
     ("https://kompanija.lidl.rs/content/download/165294/fileupload/cene_proizvoda_Lidl.csv", {"*": "Lidl"}, 1500),
     ("https://aswcene.gomex.rs/upload/cene_proizvoda_gomex.csv", {"*": "Gomex"}, 1000),
     (PORTAL + "225fff85-9efb-424f-b70a-48375b07c570", {"*": "Vero"}, 7000),
-    (PORTAL + "7788bebf-4b63-4ecc-894e-cc15c772e4aa", {"*": "Fortuna"}, 4000),
+    (PORTAL + "0b34f8fa-f0cc-482e-9ee9-0a76362719dd", {"*": "Fortuna"}, 4000),
     (PORTAL + "90465a2b-ad9f-4c42-b727-4bbc2bcbd7bb", {"*": "Aman"}, 3500),
     (PORTAL + "c1d29f13-5087-4b60-81d4-22614cb0f90e", {"*": "Metro"}, 4000),
 ]
@@ -165,8 +165,12 @@ def main():
     pisi(url, kljuc, "javne_cene", cene, "drzava,ean,veriga")
     pocisti(url, kljuc, danes, DRZAVA)
     print("Done.")
-    if napake:
-        sys.exit("Some chains failed: " + "; ".join(napake))
+    # One chain whose file moved or is down for a day is no reason to fail the whole run (the other
+    # chains were written): it shows as a warning on the run. Fail only when most sources are gone.
+    if napake and len(napake) * 2 > len(VIRI):
+        sys.exit("Too many sources failed: " + "; ".join(napake))
+    for n in napake:
+        print(f"::warning::Serbia: {n}")
 
 
 if __name__ == "__main__":
