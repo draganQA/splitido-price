@@ -1,0 +1,29 @@
+name: Public prices (Slovenia)
+
+# Once a day, early in the morning UTC: Hofer and Lidl through their product pages, Spar through its
+# online shop's categories. Each chain is its own job (they take about half an hour each, paced on
+# purpose: one request at a time with a pause, as the sites' robots.txt files ask). Free on a public
+# repository.
+on:
+  schedule:
+    - cron: "10 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  si:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        chain: [hofer, lidl, spar]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Collect and write
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python zbiralnik_si.py --chain ${{ matrix.chain }}

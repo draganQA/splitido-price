@@ -42,8 +42,26 @@ changed its format.
 If cijene.dev ever goes away: it is open source (github.com/senko/cijene-api, AGPL),
 and its crawlers read the chains' own price lists, which the law keeps public.
 
+## Slovenia
+
+Slovenia has no daily open price list, so `zbiralnik_si.py` reads the chains' own web pages, politely
+(their robots.txt files are followed, one request at a time with a pause, an honest User-Agent):
+
+- **Hofer** and **Lidl**: every product page in the chain's product sitemap carries schema.org data with
+  the price. A page that is out of stock or has no price is skipped, and a lot of Lidl's prices are weekly
+  offers, so they come and go;
+- **Spar**: online.spar.si embeds each category's first products (price, previous price) in the page; the
+  sitemap lists the categories and only the lowest level is read, so a very large category shows only its
+  first products.
+
+No barcodes, so, like Macedonia and Bulgaria, a product is the chain's own code and is matched to the
+flat's products by name (migration 111 adds `'SI'` to those lists). Mercator is not read: its public
+pages carry offers only in catalogues (images). It runs as `.github/workflows/dnevno-si.yml`, one job per chain.
+
+    python zbiralnik_si.py --chain hofer --limit 20 --dry-run
+
 ## More countries
 
-Serbia (`zbiralnik_rs.py`, weekly CSV files on the open data portal), Macedonia (`zbiralnik_mk.py`) and others get their own
+Serbia (`zbiralnik_rs.py`, weekly CSV files on the open data portal), Macedonia (`zbiralnik_mk.py`), Bulgaria (`zbiralnik_bg.py`, the daily open-data ZIP of kolkostruva.bg) and others get their own
 `zbiralnik_<country>.py` and a job in the workflow. They write to the same tables with
 their own `drzava`.
