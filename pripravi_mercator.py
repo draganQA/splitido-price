@@ -30,7 +30,7 @@ def main(vhod, izhod):
             continue
         izdelki[ean] = {"drzava": DRZAVA, "ean": ean, "ime": ime,
                         "znamka": lepo_ime(x["brand_name"]) if x.get("brand_name") else None,
-                        "kolicina": None, "kategorija": None}
+                        "kolicina": None, "kategorija": x.get("category1") or None}
         cene.append({"drzava": DRZAVA, "ean": ean, "veriga": "Mercator", "cena": round(sega, 2), "akcija": akcija,
                      "referencna": round(redna, 2) if akcija else None, "najnizja30": None, "sidrena": None,
                      "cena_kartica": round(kartica, 2) if kartica and kartica < sega else None,

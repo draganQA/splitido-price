@@ -367,7 +367,7 @@ def mercator_json(pot, parametri=None):
 
 
 def mercator_izdelek(x):
-    """One catalogue entry -> (id, name, brand, price, regular price or None, barcode, card price or None) or None."""
+    """One catalogue entry -> (id, name, brand, price, regular price or None, barcode, card price or None, category) or None."""
     try:
         cena, redna = float(x["current_price"]), float(x.get("normal_price") or 0)
     except (KeyError, TypeError, ValueError):
@@ -381,7 +381,7 @@ def mercator_izdelek(x):
         kartica, cena, redna = cena, redna, 0
     ean = next((e for e in (veljaven_ean(g.get("gtin")) for g in x.get("gtins") or []) if e), None)
     znamka = lepo_ime(x["brand_name"]) if x.get("brand_name") else None
-    return str(x.get("cinv") or x.get("code") or ""), ime, znamka, round(cena, 2), round(redna, 2) if redna > cena else None, ean, round(kartica, 2) if kartica and kartica < cena else None
+    return str(x.get("cinv") or x.get("code") or ""), ime, znamka, round(cena, 2), round(redna, 2) if redna > cena else None, ean, round(kartica, 2) if kartica and kartica < cena else None, (x.get("category1") or None)
 
 
 def zberi_mercator(omejitev):
@@ -413,8 +413,8 @@ def zberi_mercator(omejitev):
     for x in najdeno.values():
         p = mercator_izdelek(x)
         if p and p[0]:
-            id_, ime, znamka, cena, redna, ean, kartica = p
-            izhod[id_] = (id_, ime, znamka, None, cena, bool(redna), redna, ean, kartica)
+            id_, ime, znamka, cena, redna, ean, kartica, kategorija = p
+            izhod[id_] = (id_, ime, znamka, None, cena, bool(redna), redna, ean, kartica, kategorija)
     print(f"  mercator: {len(izhod)} with a price")
     return list(izhod.values())
 
@@ -429,8 +429,9 @@ def v_vrstice(ime_verige, seznam):
     for vrstica in seznam:
         koda, ime, znamka, kolicina, cena, akcija, redna, ean_izdelka = vrstica[:8]
         kartica = vrstica[8] if len(vrstica) > 8 else None
+        kategorija = vrstica[9] if len(vrstica) > 9 else None
         ean = ean_izdelka or id_izdelka(ime_verige.lower(), koda)
-        izdelki[ean] = {"drzava": DRZAVA, "ean": ean, "ime": ime, "znamka": znamka, "kolicina": kolicina, "kategorija": None}
+        izdelki[ean] = {"drzava": DRZAVA, "ean": ean, "ime": ime, "znamka": znamka, "kolicina": kolicina, "kategorija": kategorija}
         cene.append({"drzava": DRZAVA, "ean": ean, "veriga": ime_verige, "cena": cena, "akcija": bool(akcija),
                      "referencna": redna, "najnizja30": None, "sidrena": None, "cena_kartica": kartica})
     return izdelki, cene
