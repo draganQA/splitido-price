@@ -1,0 +1,27 @@
+name: Import a prepared price file
+
+# For a chain whose pages cannot be read from these cloud machines (Mercator): a file of its prices, made somewhere
+# else, is committed under data/ and read here. It is checked before anything is written (one chain, sane prices,
+# a date within two weeks, enough rows). Run by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      datoteka:
+        description: "File under data/"
+        default: "data/mercator.json.gz"
+
+jobs:
+  uvoz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check and import
+        env:
+          DATOTEKA: ${{ github.event.inputs.datoteka }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python uvozi_datoteko.py "$DATOTEKA"
