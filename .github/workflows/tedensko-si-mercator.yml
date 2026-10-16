@@ -1,27 +1,17 @@
 name: Public prices (Slovenia, Mercator)
 
-# Once a week: Mercator's online shop has a page per product (about 17,500), too many to read in one go politely.
-# The pages are split into five slices that run side by side; together about one request a second, which takes
-# around five hours. Free on a public repository.
+# Twice a week: Mercator's own catalogue endpoint, 100 products a request (about 180 requests, ten minutes).
+# If the site does not answer from GitHub, the job stops and writes nothing; the prices can then be imported
+# from a prepared file (workflow "Import a prepared price file").
 on:
   schedule:
-    - cron: "30 3 * * 1"
+    - cron: "30 4 * * 1,4"
   workflow_dispatch:
-    inputs:
-      shard:
-        description: "Which slice (1-5) to read; all = every slice"
-        type: choice
-        default: "1"
-        options: ["1", "2", "3", "4", "5", all]
 
 jobs:
   mercator:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(github.event.inputs.shard && github.event.inputs.shard != 'all' && format('[{0}]', github.event.inputs.shard) || '[1,2,3,4,5]') }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,4 +21,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python zbiralnik_si.py --chain mercator --shard ${{ matrix.shard }}/5
+        run: python zbiralnik_si.py --chain mercator
