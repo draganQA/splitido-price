@@ -1,7 +1,7 @@
 name: Public prices (Slovenia)
 
 # Twice a week (Monday and Thursday, early morning UTC: that is when Hofer and Lidl start their new
-# weekly offers): Hofer and Lidl through their product pages, Spar through its online shop's categories. Each chain is its own job (they take about half an hour each, paced on
+# weekly offers): Hofer and Lidl through their product pages, Spar through its online shop's categories, Tuš through its offer lists. Each chain is its own job (they take about half an hour each, paced on
 # purpose: one request at a time with a pause, as the sites' robots.txt files ask). Free on a public
 # repository.
 on:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        chain: [hofer, lidl, spar]
+        chain: [hofer, lidl, spar, tus]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

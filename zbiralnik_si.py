@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Shop prices for Slovenia, read from the chains' own web pages (Slovenia has no daily open price list
-like Croatia or Serbia). Three chains, each read the way its site publishes its products:
+like Croatia or Serbia). Four chains, each read the way its site publishes its products:
 
   hofer  every product page in www.hofer.si's product sitemap carries schema.org data (name, brand,
          pack size, price in EUR);
@@ -9,7 +9,9 @@ like Croatia or Serbia). Three chains, each read the way its site publishes its 
          (a page that says OutOfStock or has no price is skipped). Many of Lidl's prices are weekly
          offers, so they come and go;
   spar   online.spar.si: every category page embeds its first products (name, price, previous price)
-         in the page; the sitemap lists the categories, and only the lowest level is read.
+         in the page; the sitemap lists the categories, and only the lowest level is read;
+  tus    the offer lists on tus.si (permanently reduced, current catalogue): a card has the name, the price,
+         the regular price and the barcode. Club-card lists are left out.
 
 Polite on purpose: the sites' robots.txt files are followed (no search pages, no paths they disallow),
 one request at a time with a pause between them, an honest User-Agent, and no attempt to get around
@@ -39,8 +41,8 @@ from skupno import decimal, pisi, pocisti
 
 DRZAVA = "SI"
 UA = "Mozilla/5.0 (compatible; SplitidoPriceBot/1.0; +https://github.com/draganQA/splitido-price)"
-PREMOR = {"hofer": 1.2, "lidl": 1.2, "spar": 2.5}      # seconds between two requests to the same site
-NAJMANJ = {"hofer": 250, "lidl": 150, "spar": 1000}    # fewer products than this: the pages changed, write nothing
+PREMOR = {"hofer": 1.2, "lidl": 1.2, "spar": 2.5, "tus": 1.5}      # seconds between two requests to the same site
+NAJMANJ = {"hofer": 250, "lidl": 150, "spar": 1000, "tus": 150}    # fewer products than this: the pages changed, write nothing
 
 
 KOLICINA = re.compile(r"^(\d+\s*x\s*)?\d+([.,]\d+)?\s*(g|kg|dag|ml|cl|dl|l|kos|kosov|m|cm)\b", re.I)
@@ -292,7 +294,58 @@ def zberi_spar(omejitev):
     return list(izhod.values())
 
 
-VERIGE = {"hofer": ("Hofer", zberi_hofer), "lidl": ("Lidl", zberi_lidl), "spar": ("Spar", zberi_spar)}
+# ---- Tuš: the offer lists on tus.si (a WooCommerce shop window: name, price, regular price and barcode per card) ------
+
+# only lists whose price is for everyone: the club-card lists ("Tuš klub 50", "Mojih 10") are left out
+TUS_SEZNAMI = [
+    "https://www.tus.si/aktualno/akcijska-ponudba/trajno-znizano/",
+    "https://www.tus.si/aktualno/akcijska-ponudba/aktualno-iz-kataloga/",
+]
+
+
+def tus_kartice(stran):
+    """The product cards of one list page -> [(barcode, name, price, regular price or None)]."""
+    izhod = []
+    for m in re.finditer(r'<li class="col[^"]*product[^"]*"[^>]*>(.*?)</li>', stran, re.S):
+        b = m.group(1)
+        ean = re.search(r'data-product-ean="(\d*)"', b)
+        ime = re.search(r"<h3>\s*<a[^>]*>(.*?)</a>", b, re.S)
+        cena = re.search(r'<span class="price">\s*([\d.,]+)\s*', b)
+        redna = re.search(r"Redna cena:\s*([\d.,]+)", b)
+        if not (ean and ime and cena):
+            continue
+        c = decimal(cena.group(1))
+        r = decimal(redna.group(1)) if redna else None
+        e = veljaven_ean(ean.group(1))
+        n = lepo_ime(ime.group(1))
+        if e and n and c and c > 0:
+            izhod.append((e, n, c, r if r and r > c else None))
+    return izhod
+
+
+def zberi_tus(omejitev):
+    izhod = {}
+    for seznam in TUS_SEZNAMI:
+        for stran_st in range(1, 80):
+            url = seznam if stran_st == 1 else f"{seznam}page/{stran_st}/"
+            try:
+                stran = prenesi(url)
+            except Exception as e:  # noqa: BLE001
+                print(f"  ! {url}: {e}")
+                break
+            kartice = tus_kartice(stran or "")
+            nove = [k for k in kartice if k[0] not in izhod]
+            for e, ime, cena, redna in kartice:
+                izhod[e] = (e, ime, None, None, cena, bool(redna), redna, e)
+            print(f"  tus: {url[-45:]} page {stran_st}: {len(kartice)} cards, {len(nove)} new", flush=True)
+            time.sleep(PREMOR["tus"])
+            if not kartice or not nove or (omejitev and stran_st >= omejitev):
+                break
+    print(f"  tus: {len(izhod)} products")
+    return list(izhod.values())
+
+
+VERIGE = {"hofer": ("Hofer", zberi_hofer), "lidl": ("Lidl", zberi_lidl), "spar": ("Spar", zberi_spar), "tus": ("Tuš", zberi_tus)}
 
 
 def v_vrstice(ime_verige, seznam):
@@ -309,7 +362,7 @@ def v_vrstice(ime_verige, seznam):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--chain", choices=["hofer", "lidl", "spar", "all"], default="all")
+    ap.add_argument("--chain", choices=["hofer", "lidl", "spar", "tus", "all"], default="all")
     ap.add_argument("--limit", type=int, help="read only this many pages per chain (for a test)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", help="write the rows as JSON to this file (for tests)")
