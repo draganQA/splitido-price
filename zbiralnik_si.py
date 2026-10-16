@@ -82,6 +82,60 @@ def najdi_url(besedilo):
     return [u.strip() for u in re.findall(r"<loc>\s*([^<]+?)\s*</loc>", besedilo)]
 
 
+# ---- the Nuxt payload some sites embed (Lidl): a flat JSON array whose containers hold indices into it -----------
+
+NUXT_OZNAKE = {"ShallowReactive", "Reactive", "Ref", "ShallowRef", "EmptyRef", "EmptyShallowRef"}
+
+
+def nuxt_podatki(stran):
+    """The page's embedded Nuxt payload as plain nested data, or None."""
+    for m in re.finditer(r"<script[^>]*>(\[\[.*?)</script>", stran, re.S):
+        try:
+            arr = json.loads(m.group(1))
+        except ValueError:
+            continue
+
+        def razpri(i, globina=0):
+            if not isinstance(i, int) or isinstance(i, bool):
+                return i
+            if i == -1 or globina > 40 or i >= len(arr):
+                return None
+            v = arr[i]
+            if isinstance(v, list):
+                if v and isinstance(v[0], str):
+                    return razpri(v[1], globina + 1) if v[0] in NUXT_OZNAKE and len(v) > 1 else v
+                return [razpri(x, globina + 1) for x in v]
+            if isinstance(v, dict):
+                return {k: razpri(x, globina + 1) for k, x in v.items()}
+            return v
+
+        try:
+            return razpri(0)
+        except RecursionError:
+            return None
+    return None
+
+
+def veljaven_ean(v):
+    v = str(v or "").strip()
+    return v if v.isdigit() and len(v) in (8, 12, 13, 14) else None
+
+
+def lidl_podrobnosti(stran):
+    """(barcode, pack size text) of a Lidl product page, from its embedded payload; (None, None) when absent."""
+    koren = nuxt_podatki(stran)
+    podatki = (koren or {}).get("data") if isinstance(koren, dict) else None
+    if not isinstance(podatki, dict):
+        return None, None
+    for izdelek in podatki.values():
+        if isinstance(izdelek, dict) and "eans" in izdelek:
+            eani = izdelek.get("eans") or []
+            cena = izdelek.get("price") if isinstance(izdelek.get("price"), dict) else {}
+            pakiranje = (cena.get("packaging") or {}).get("text") if isinstance(cena.get("packaging"), dict) else None
+            return veljaven_ean(eani[0] if eani else None), (str(pakiranje).strip() if pakiranje else None)
+    return None, None
+
+
 # ---- schema.org product pages (Hofer, Lidl) ---------------------------------------------------------
 
 def izdelek_ld(stran):
@@ -121,7 +175,11 @@ def preberi_ld(stran, veriga):
     koda = d.get("sku") or d.get("productID") or (o.get("url") or d.get("url") or "").rstrip("/").rsplit("/", 1)[-1]
     opis = lepo_ime(d.get("description"))
     kolicina = opis if KOLICINA.match(opis) else None
-    return str(koda), ime, (lepo_ime(znamka) if znamka else None), kolicina, cena
+    ean = None
+    if veriga == "lidl":
+        ean, pakiranje = lidl_podrobnosti(stran)
+        kolicina = kolicina or pakiranje
+    return str(koda), ime, (lepo_ime(znamka) if znamka else None), kolicina, cena, ean
 
 
 def zberi_ld(veriga, naslovi, omejitev):
@@ -150,7 +208,7 @@ def zberi_ld(veriga, naslovi, omejitev):
             print(f"  {veriga}: {i + 1}/{len(naslovi)}, with a price: {len(izhod)}", flush=True)
         time.sleep(PREMOR[veriga])
     print(f"  {veriga}: {len(izhod)} with a price, {brez} without")
-    return [(k, ime, znamka, kol, cena, False, None) for k, (_, ime, znamka, kol, cena) in izhod.items()]
+    return [(k, ime, znamka, kol, cena, False, None, ean) for k, (_, ime, znamka, kol, cena, ean) in izhod.items()]
 
 
 def zberi_hofer(omejitev):
@@ -176,19 +234,25 @@ def zberi_lidl(omejitev):
 # ---- Spar: the products embedded in a category page ---------------------------------------------------
 
 def izdelki_spar(stran):
+    """The products embedded in a category page; each has `ean` resolved to its barcode (or None)."""
     kosi = re.findall(r'self\.__next_f\.push\(\[1,(".*?")\]\)</script>', stran, re.S)
     tok = "".join(json.loads(k) for k in kosi)
-    izdelki = []
+    izdelki, reference = [], {}
     for vrstica in tok.split("\n"):
-        m = re.match(r"^[0-9a-f]+:(\{.*)$", vrstica)
+        m = re.match(r"^([0-9a-f]+):(\[.*|\{.*)$", vrstica)
         if not m:
             continue
         try:
-            v = json.loads(m.group(1))
+            v = json.loads(m.group(2))
         except ValueError:
             continue
+        reference[m.group(1)] = v
         if isinstance(v, dict) and v.get("__typename") == "CatalogProductModel":
             izdelki.append(v)
+    for p in izdelki:
+        e = p.get("ean")
+        e = reference.get(e[1:]) if isinstance(e, str) and e.startswith("$") else e
+        p["ean"] = veljaven_ean(e[0] if isinstance(e, list) and e else e)
     return izdelki
 
 
@@ -220,7 +284,7 @@ def zberi_spar(omejitev):
             prej = decimal(str(p.get("previousPrice") or ""))
             akcija = bool(prej and prej > cena)
             znamka = lepo_ime(p["brand"]) if p.get("brand") else None
-            izhod[str(p["sku"])] = (str(p["sku"]), ime, znamka, None, cena, akcija, prej if akcija else None)
+            izhod[str(p["sku"])] = (str(p["sku"]), ime, znamka, None, cena, akcija, prej if akcija else None, p.get("ean"))
         if (i + 1) % 50 == 0:
             print(f"  spar: {i + 1}/{len(kategorije)}, products: {len(izhod)}", flush=True)
         time.sleep(PREMOR["spar"])
@@ -232,9 +296,11 @@ VERIGE = {"hofer": ("Hofer", zberi_hofer), "lidl": ("Lidl", zberi_lidl), "spar":
 
 
 def v_vrstice(ime_verige, seznam):
+    """Rows for the tables. A product with a barcode is one catalogue row for every chain that sells it (the barcode is
+    its id); one without is the chain's own code."""
     izdelki, cene = {}, []
-    for koda, ime, znamka, kolicina, cena, akcija, redna in seznam:
-        ean = id_izdelka(ime_verige.lower(), koda)
+    for koda, ime, znamka, kolicina, cena, akcija, redna, ean_izdelka in seznam:
+        ean = ean_izdelka or id_izdelka(ime_verige.lower(), koda)
         izdelki[ean] = {"drzava": DRZAVA, "ean": ean, "ime": ime, "znamka": znamka, "kolicina": kolicina, "kategorija": None}
         cene.append({"drzava": DRZAVA, "ean": ean, "veriga": ime_verige, "cena": cena, "akcija": bool(akcija),
                      "referencna": redna, "najnizja30": None, "sidrena": None})
