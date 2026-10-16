@@ -23,6 +23,7 @@ from skupno import pisi, pocisti
 
 IZDELEK = {"drzava", "ean", "ime", "znamka", "kolicina", "kategorija"}
 CENA = {"drzava", "ean", "veriga", "cena", "akcija", "referencna", "najnizja30", "sidrena", "posodobljeno"}
+CENA_KARTICA = CENA | {"cena_kartica"}   # the card price is optional
 
 
 def preberi(pot):
@@ -53,10 +54,12 @@ def preveri(d, najmanj):
             napake.append(f"bad product row: {str(p)[:100]}"); break
     videni = set()
     for c in cene:
-        if set(c) != CENA or c["drzava"] != "SI" or c["veriga"] != veriga or c["ean"] not in eani:
+        if set(c) not in (CENA, CENA_KARTICA) or c["drzava"] != "SI" or c["veriga"] != veriga or c["ean"] not in eani:
             napake.append(f"bad price row: {str(c)[:100]}"); break
         if not (0 < float(c["cena"]) < 10000) or (c["referencna"] is not None and not float(c["referencna"]) > float(c["cena"])):
             napake.append(f"odd price: {str(c)[:100]}"); break
+        if c.get("cena_kartica") is not None and not 0 < float(c["cena_kartica"]) < float(c["cena"]):
+            napake.append(f"odd card price: {str(c)[:100]}"); break
         if c["posodobljeno"] != datum:
             napake.append("a price row has another date than the file"); break
         k = (c["ean"], c["veriga"])

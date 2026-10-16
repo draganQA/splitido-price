@@ -20,8 +20,9 @@ def main(vhod, izhod):
         if sega <= 0 or not ime:
             continue
         skupine = {d.get("group_type") for d in x.get("discounts") or []}
+        kartica = None
         if "pika_discount" in skupine and redna > 0:   # card-holder price: the shelf price is the regular one
-            sega, redna = redna, 0
+            kartica, sega, redna = sega, redna, 0
         akcija = redna > sega
         ean = next((e for e in (veljaven_ean(g.get("gtin")) for g in x.get("gtins") or []) if e), None) \
             or id_izdelka("mercator", x.get("cinv") or x.get("code"))
@@ -32,6 +33,7 @@ def main(vhod, izhod):
                         "kolicina": None, "kategorija": None}
         cene.append({"drzava": DRZAVA, "ean": ean, "veriga": "Mercator", "cena": round(sega, 2), "akcija": akcija,
                      "referencna": round(redna, 2) if akcija else None, "najnizja30": None, "sidrena": None,
+                     "cena_kartica": round(kartica, 2) if kartica and kartica < sega else None,
                      "posodobljeno": danes})
     with gzip.open(izhod, "wt", encoding="utf-8") as f:
         json.dump({"datum": danes, "veriga": "Mercator", "izdelki": list(izdelki.values()), "cene": cene}, f,

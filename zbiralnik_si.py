@@ -367,7 +367,7 @@ def mercator_json(pot, parametri=None):
 
 
 def mercator_izdelek(x):
-    """One catalogue entry -> (id, name, brand, price, regular price or None, barcode) or None."""
+    """One catalogue entry -> (id, name, brand, price, regular price or None, barcode, card price or None) or None."""
     try:
         cena, redna = float(x["current_price"]), float(x.get("normal_price") or 0)
     except (KeyError, TypeError, ValueError):
@@ -376,11 +376,12 @@ def mercator_izdelek(x):
     if cena <= 0 or not ime:
         return None
     # "Pika" prices are for card holders only: the shelf price is then the regular one.
+    kartica = None
     if "pika_discount" in {d.get("group_type") for d in x.get("discounts") or []} and redna > 0:
-        cena, redna = redna, 0
+        kartica, cena, redna = cena, redna, 0
     ean = next((e for e in (veljaven_ean(g.get("gtin")) for g in x.get("gtins") or []) if e), None)
     znamka = lepo_ime(x["brand_name"]) if x.get("brand_name") else None
-    return str(x.get("cinv") or x.get("code") or ""), ime, znamka, round(cena, 2), round(redna, 2) if redna > cena else None, ean
+    return str(x.get("cinv") or x.get("code") or ""), ime, znamka, round(cena, 2), round(redna, 2) if redna > cena else None, ean, round(kartica, 2) if kartica and kartica < cena else None
 
 
 def zberi_mercator(omejitev):
@@ -412,8 +413,8 @@ def zberi_mercator(omejitev):
     for x in najdeno.values():
         p = mercator_izdelek(x)
         if p and p[0]:
-            id_, ime, znamka, cena, redna, ean = p
-            izhod[id_] = (id_, ime, znamka, None, cena, bool(redna), redna, ean)
+            id_, ime, znamka, cena, redna, ean, kartica = p
+            izhod[id_] = (id_, ime, znamka, None, cena, bool(redna), redna, ean, kartica)
     print(f"  mercator: {len(izhod)} with a price")
     return list(izhod.values())
 
@@ -425,11 +426,13 @@ def v_vrstice(ime_verige, seznam):
     """Rows for the tables. A product with a barcode is one catalogue row for every chain that sells it (the barcode is
     its id); one without is the chain's own code."""
     izdelki, cene = {}, []
-    for koda, ime, znamka, kolicina, cena, akcija, redna, ean_izdelka in seznam:
+    for vrstica in seznam:
+        koda, ime, znamka, kolicina, cena, akcija, redna, ean_izdelka = vrstica[:8]
+        kartica = vrstica[8] if len(vrstica) > 8 else None
         ean = ean_izdelka or id_izdelka(ime_verige.lower(), koda)
         izdelki[ean] = {"drzava": DRZAVA, "ean": ean, "ime": ime, "znamka": znamka, "kolicina": kolicina, "kategorija": None}
         cene.append({"drzava": DRZAVA, "ean": ean, "veriga": ime_verige, "cena": cena, "akcija": bool(akcija),
-                     "referencna": redna, "najnizja30": None, "sidrena": None})
+                     "referencna": redna, "najnizja30": None, "sidrena": None, "cena_kartica": kartica})
     return izdelki, cene
 
 
