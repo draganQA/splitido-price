@@ -41,8 +41,10 @@ from skupno import decimal, pisi, pocisti
 
 DRZAVA = "SI"
 UA = "Mozilla/5.0 (compatible; SplitidoPriceBot/1.0; +https://github.com/draganQA/splitido-price)"
-PREMOR = {"hofer": 1.2, "lidl": 1.2, "spar": 2.5, "tus": 1.5}      # seconds between two requests to the same site
-NAJMANJ = {"hofer": 250, "lidl": 150, "spar": 1000, "tus": 150}    # fewer products than this: the pages changed, write nothing
+PREMOR = {"hofer": 1.2, "lidl": 1.2, "spar": 2.5, "tus": 1.5, "mercator": 3.5}      # seconds between two requests to the same site
+# days a chain's price may stay unrefreshed before it is removed (Mercator is read once a week)
+DNI = {"Mercator": 10}
+NAJMANJ = {"hofer": 250, "lidl": 150, "spar": 1000, "tus": 150, "mercator": 1500}    # fewer products than this: the pages changed, write nothing
 
 
 KOLICINA = re.compile(r"^(\d+\s*x\s*)?\d+([.,]\d+)?\s*(g|kg|dag|ml|cl|dl|l|kos|kosov|m|cm)\b", re.I)
@@ -345,7 +347,69 @@ def zberi_tus(omejitev):
     return list(izhod.values())
 
 
-VERIGE = {"hofer": ("Hofer", zberi_hofer), "lidl": ("Lidl", zberi_lidl), "spar": ("Spar", zberi_spar), "tus": ("Tuš", zberi_tus)}
+# ---- Mercator: the online shop mercatoronline.si (a page per product, listed in its sitemap) -----------------------
+
+def mercator_izdelek(stran):
+    """One product page -> (id, name, brand, price, regular price or None, barcode) or None."""
+    m = re.search(r'var analyticsObject\s*=\s*', stran)
+    if not m:
+        return None
+    try:
+        podatki, _ = json.JSONDecoder().raw_decode(stran[m.end():])
+        izdelek = podatki["ecommerce"]["items"][0]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+    cena = decimal(str(izdelek.get("price", "")))
+    ime = lepo_ime(izdelek.get("item_name"))
+    if not cena or cena <= 0 or not ime:
+        return None
+    # "Pika" prices are for card holders only: the shelf price is then the regular one. A plain sale has a promo price.
+    sega, redna = cena, None
+    promo = decimal(str(izdelek.get("promo_price", "")))
+    if promo and 0 < promo < cena and "pika_discount" not in stran[:stran.find("productHolder") + 6000 if "productHolder" in stran else 0]:
+        sega, redna = promo, cena
+    gtin = re.search(r'data-gtin="(\d*)"', stran)
+    znamka = lepo_ime(izdelek.get("item_brand")) if izdelek.get("item_brand") else None
+    return str(izdelek.get("item_id") or ""), ime, znamka, sega, redna, veljaven_ean(gtin.group(1) if gtin else None)
+
+
+def zberi_mercator(omejitev, del_=None):
+    vsebina = prenesi("https://mercatoronline.si/sitemap.xml")
+    if not vsebina:
+        raise RuntimeError("mercator: no sitemap")
+    naslovi = [u for u in najdi_url(vsebina) if "/izdelek/" in u]
+    if del_:   # "3/6": every sixth page, starting at the third, so shards never overlap
+        k, n = del_
+        naslovi = naslovi[k - 1::n]
+    if omejitev:
+        naslovi = naslovi[:omejitev]
+    print(f"  mercator: {len(naslovi)} product pages", flush=True)
+    izhod, brez, zaporedne_napake = {}, 0, 0
+    for i, url in enumerate(naslovi):
+        try:
+            stran = prenesi(url)
+            zaporedne_napake = 0
+        except Exception as e:  # noqa: BLE001
+            zaporedne_napake += 1
+            print(f"  ! {url}: {e}")
+            if zaporedne_napake >= 8:
+                raise RuntimeError("mercator: the site stopped answering")
+            time.sleep(PREMOR["mercator"])
+            continue
+        p = mercator_izdelek(stran) if stran else None
+        if p and p[0]:
+            id_, ime, znamka, cena, redna, ean = p
+            izhod[id_] = (id_, ime, znamka, None, cena, bool(redna), redna, ean)
+        else:
+            brez += 1
+        if (i + 1) % 100 == 0:
+            print(f"  mercator: {i + 1}/{len(naslovi)}, with a price: {len(izhod)}", flush=True)
+        time.sleep(PREMOR["mercator"])
+    print(f"  mercator: {len(izhod)} with a price, {brez} without")
+    return list(izhod.values())
+
+
+VERIGE = {"hofer": ("Hofer", zberi_hofer), "lidl": ("Lidl", zberi_lidl), "spar": ("Spar", zberi_spar), "tus": ("Tuš", zberi_tus), "mercator": ("Mercator", zberi_mercator)}
 
 
 def v_vrstice(ime_verige, seznam):
@@ -362,11 +426,13 @@ def v_vrstice(ime_verige, seznam):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--chain", choices=["hofer", "lidl", "spar", "tus", "all"], default="all")
+    ap.add_argument("--chain", choices=["hofer", "lidl", "spar", "tus", "mercator", "all"], default="all")
     ap.add_argument("--limit", type=int, help="read only this many pages per chain (for a test)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", help="write the rows as JSON to this file (for tests)")
+    ap.add_argument("--shard", help="K/N: only the K-th of N slices of a big chain's pages (Mercator), so slices never overlap")
     args = ap.parse_args()
+    del_ = tuple(int(x) for x in args.shard.split("/")) if args.shard else None
 
     izbrane = list(VERIGE) if args.chain == "all" else [args.chain]
     izdelki, cene, stevilo, napake = {}, [], {}, []
@@ -374,7 +440,7 @@ def main():
         veriga, bralnik = VERIGE[ime]
         print(f"{veriga}:", flush=True)
         try:
-            seznam = bralnik(args.limit)
+            seznam = bralnik(args.limit, del_) if ime == "mercator" else bralnik(args.limit)
         except Exception as e:  # noqa: BLE001
             napake.append(f"{veriga}: {e}")
             continue
@@ -406,7 +472,8 @@ def main():
     kljuc = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     pisi(url, kljuc, "javni_izdelki", list(izdelki.values()), "drzava,ean")
     pisi(url, kljuc, "javne_cene", cene, "drzava,ean,veriga")
-    pocisti(url, kljuc, datum, DRZAVA)
+    for veriga in stevilo:   # each chain on its own: a chain that is read less often must not lose its prices to another's run
+        pocisti(url, kljuc, datum, DRZAVA, veriga=veriga, dni=DNI.get(veriga, 4))
     print("Done.")
     if napake:
         sys.exit("Failed: " + "; ".join(napake))

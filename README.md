@@ -51,6 +51,7 @@ Slovenia has no daily open price list, so `zbiralnik_si.py` reads the chains' ow
   the price. A page that is out of stock or has no price is skipped, and a lot of Lidl's prices are weekly
   offers, so they come and go;
 - **Tuš**: the offer lists on tus.si (permanently reduced, current catalogue); a card has name, price, regular price and a barcode. The club-card lists are left out. The full range is in its online shop hitrinakup.com, whose prices a browser loads with database queries: it is not read.
+- **Mercator**: mercatoronline.si, a page per product from its sitemap (about 17,500): the barcode, the price and a sale price. A card-holder (Pika) price is not a price for everyone and is left out. Read once a week by five slices side by side (`dnevno`'s sibling `tedensko-si-mercator.yml`), about one request a second in all.
 - **Spar**: online.spar.si embeds each category's first products (price, previous price) in the page; the
   sitemap lists the categories and only the lowest level is read, so a very large category shows only its
   first products.

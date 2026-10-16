@@ -35,9 +35,13 @@ def pisi(url, kljuc, tabela, vrstice, konflikt):
             print(f"  {tabela}: {min(i + PACKET, len(vrstice))}/{len(vrstice)}", flush=True)
 
 
-def pocisti(url, kljuc, datum, drzava):
-    meja = (datetime.date.fromisoformat(datum) - datetime.timedelta(days=3)).isoformat()
-    q = urllib.parse.urlencode({"drzava": f"eq.{drzava}", "posodobljeno": f"lt.{meja}"})
+def pocisti(url, kljuc, datum, drzava, veriga=None, dni=3):
+    """Deletes the country's prices (of one chain, when given) not refreshed for `dni` days before `datum`."""
+    meja = (datetime.date.fromisoformat(datum) - datetime.timedelta(days=dni)).isoformat()
+    pogoji = {"drzava": f"eq.{drzava}", "posodobljeno": f"lt.{meja}"}
+    if veriga:
+        pogoji["veriga"] = f"eq.{veriga}"
+    q = urllib.parse.urlencode(pogoji)
     zahteva = urllib.request.Request(f"{url}/rest/v1/javne_cene?{q}", method="DELETE", headers={
         "apikey": kljuc, "Authorization": f"Bearer {kljuc}", "Prefer": "return=minimal"})
     urllib.request.urlopen(zahteva, timeout=120).read()
