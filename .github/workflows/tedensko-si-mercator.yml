@@ -7,6 +7,12 @@ on:
   schedule:
     - cron: "30 3 * * 1"
   workflow_dispatch:
+    inputs:
+      shard:
+        description: "Which slice (1-5) to read; all = every slice"
+        type: choice
+        default: "1"
+        options: ["1", "2", "3", "4", "5", all]
 
 jobs:
   mercator:
@@ -15,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: ${{ fromJSON(github.event.inputs.shard && github.event.inputs.shard != 'all' && format('[{0}]', github.event.inputs.shard) || '[1,2,3,4,5]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
