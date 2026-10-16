@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: "10 5 * * 1,4"
   workflow_dispatch:
+    inputs:
+      chain:
+        description: "Which chain to read (empty = all four)"
+        type: choice
+        default: all
+        options: [all, hofer, lidl, spar, tus]
 
 jobs:
   si:
@@ -16,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        chain: [hofer, lidl, spar, tus]
+        chain: ${{ fromJSON(github.event.inputs.chain && github.event.inputs.chain != 'all' && format('["{0}"]', github.event.inputs.chain) || '["hofer","lidl","spar","tus"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
