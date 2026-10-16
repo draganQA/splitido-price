@@ -50,12 +50,12 @@ NAJMANJ = {"hofer": 250, "lidl": 150, "spar": 1000, "tus": 150, "mercator": 1500
 KOLICINA = re.compile(r"^(\d+\s*x\s*)?\d+([.,]\d+)?\s*(g|kg|dag|ml|cl|dl|l|kos|kosov|m|cm)\b", re.I)
 
 
-def prenesi(url, poskusi=3):
+def prenesi(url, poskusi=3, cas=60):
     """The page's text, or None when it does not exist. Waits and tries again on a busy server."""
     for poskus in range(poskusi):
         zahteva = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "sl"})
         try:
-            with urllib.request.urlopen(zahteva, timeout=60) as r:
+            with urllib.request.urlopen(zahteva, timeout=cas) as r:
                 return r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             if e.code in (301, 302, 303, 307, 308, 404, 410):   # gone, or a redirect that loops (a broken link in a sitemap)
@@ -387,13 +387,14 @@ def zberi_mercator(omejitev, del_=None):
     izhod, brez, zaporedne_napake = {}, 0, 0
     for i, url in enumerate(naslovi):
         try:
-            stran = prenesi(url)
+            stran = prenesi(url, poskusi=2, cas=25)
             zaporedne_napake = 0
         except Exception as e:  # noqa: BLE001
             zaporedne_napake += 1
             print(f"  ! {url}: {e}")
-            if zaporedne_napake >= 8:
-                raise RuntimeError("mercator: the site stopped answering")
+            # Not a reason to try harder: a site that does not answer from here is left alone, not worked around.
+            if zaporedne_napake >= 5:
+                raise RuntimeError("mercator: its product pages do not answer from this machine (blocked or down); not read")
             time.sleep(PREMOR["mercator"])
             continue
         p = mercator_izdelek(stran) if stran else None
