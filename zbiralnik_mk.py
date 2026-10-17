@@ -12,6 +12,7 @@ main, the same in all its shops). Only the standard library.
   Vero       an HTML table per shop, 500 products to a page (<shop>_<page>.html)
 
   Stokomak   an HTML table per shop on its price portal, 100 products to a page
+  Spar       the JSON of spar.mk/pricelist (api.prod.spar.mk), Skopje, Taftalidze as the reference shop
   Zito       the same portal software (zito.proverkanaceni.mk), Skopje, Centar ZOIL as the reference shop
   Kam        a PDF per shop (listed by a JSON call on kam.com.mk), read with pdftotext
 
@@ -54,6 +55,8 @@ STOKOMAK = "https://stokomak.proverkanaceni.mk/index.php?page={page}&perPage=100
 STOKOMAK_SHOP = "1"   # Kisela Voda
 ZITO = "https://zito.proverkanaceni.mk/index.php?page={page}&perPage=100&search=&org={shop}"
 ZITO_SHOP = "13"   # Zito Centar ZOIL, Skopje
+SPAR_API = "https://api.prod.spar.mk/api/pricelists-web/{shop}/products?page={page}&per_page=500"
+SPAR_SHOP = "51"   # SPAR M.70 Taftalidze, Skopje
 KAM = "https://kam.com.mk"
 KIPPER = "https://kipper.mk/wp-admin/admin-ajax.php"
 KIPPER_SHOP = "8211"   # Kipper 041, Kumanovo: the id of the shop's page
@@ -157,6 +160,34 @@ def preberi_proverka(veriga, url, trgovina):
     return izhod
 
 
+# SPAR writes names in the old Yugoslav 7-bit letters ("RIBI^KI JO[" is "RIBIČKI JOŠ").
+SPAR_ZNAKI = str.maketrans({"[": "Š", "{": "š", "^": "Č", "~": "č", "]": "Ć", "}": "ć", "@": "Ž", "`": "ž", "\\": "Đ", "|": "đ"})
+
+
+def preberi_spar_mk():
+    """SPAR North Macedonia: the JSON its own price-list page reads (500 products to a page, all of a shop's
+    assortment, of which only the ones marked available are in the shop)."""
+    izhod = []
+    zadnja = 1
+    stran = 1
+    while stran <= zadnja and stran < 400:
+        telo = prenesi(SPAR_API.format(shop=SPAR_SHOP, page=stran))
+        if not telo:
+            break
+        podatki = json.loads(telo)
+        zadnja = int((podatki.get("meta") or {}).get("last_page") or 1)
+        for p in podatki.get("data") or []:
+            if str(p.get("available")) != "1":
+                continue
+            i = izdelek("Spar", (p.get("name") or "").translate(SPAR_ZNAKI), decimal(str(p.get("sale") or "")),
+                        decimal(str(p.get("regular") or "")), None)
+            if i:
+                izhod.append(i)
+        stran += 1
+        time.sleep(3)
+    return izhod
+
+
 def preberi_stokomak():
     return preberi_proverka("Stokomak", STOKOMAK, STOKOMAK_SHOP)
 
@@ -242,7 +273,8 @@ def preberi_kipper():
 
 VERIGE = [("Ramstore", preberi_ramstore, 8000), ("Vero", preberi_vero, 5000),
           ("Stokomak", preberi_stokomak, 2000), ("Kam", preberi_kam, 800),
-          ("Kipper", preberi_kipper, 1500), ("Zito", preberi_zito, 2500)]
+          ("Kipper", preberi_kipper, 1500), ("Zito", preberi_zito, 2500),
+          ("Spar", preberi_spar_mk, 3000)]
 
 
 def zberi():
