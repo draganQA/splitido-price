@@ -12,6 +12,7 @@ main, the same in all its shops). Only the standard library.
   Vero       an HTML table per shop, 500 products to a page (<shop>_<page>.html)
 
   Stokomak   an HTML table per shop on its price portal, 100 products to a page
+  Zito       the same portal software (zito.proverkanaceni.mk), Skopje, Centar ZOIL as the reference shop
   Kam        a PDF per shop (listed by a JSON call on kam.com.mk), read with pdftotext
 
   Kipper     the page's own table is filled by a call to its admin-ajax.php (500 products at a time)
@@ -51,6 +52,8 @@ VERO = "https://pricelist.vero.com.mk/{shop}_{page}.html"
 VERO_SHOP = "91"   # Vero 2, Karpos
 STOKOMAK = "https://stokomak.proverkanaceni.mk/index.php?page={page}&perPage=100&search=&org={shop}"
 STOKOMAK_SHOP = "1"   # Kisela Voda
+ZITO = "https://zito.proverkanaceni.mk/index.php?page={page}&perPage=100&search=&org={shop}"
+ZITO_SHOP = "13"   # Zito Centar ZOIL, Skopje
 KAM = "https://kam.com.mk"
 KIPPER = "https://kipper.mk/wp-admin/admin-ajax.php"
 KIPPER_SHOP = "8211"   # Kipper 041, Kumanovo: the id of the shop's page
@@ -135,10 +138,11 @@ def cena(s):
     return decimal(m.group()) if m else None
 
 
-def preberi_stokomak():
+def preberi_proverka(veriga, url, trgovina):
+    """A chain's table on a proverkanaceni.mk portal (the same page for several chains), 100 products to a page."""
     izhod = []
     for stran in range(1, 200):
-        s = prenesi(STOKOMAK.format(page=stran, shop=STOKOMAK_SHOP))
+        s = prenesi(url.format(page=stran, shop=trgovina))
         vrstice = [c for c in vrstice_tabele(s or "") if len(c) >= 6]
         if not vrstice:
             break
@@ -146,11 +150,19 @@ def preberi_stokomak():
             # name, price now, unit price, description, available, regular price, price with discount, type, duration
             if c[4].lower() not in ("да", "da"):
                 continue
-            i = izdelek("Stokomak", c[0], cena(c[1]), cena(c[5]), c[3])
+            i = izdelek(veriga, c[0], cena(c[1]), cena(c[5]), c[3])
             if i:
                 izhod.append(i)
-        time.sleep(1)
+        time.sleep(1.5)
     return izhod
+
+
+def preberi_stokomak():
+    return preberi_proverka("Stokomak", STOKOMAK, STOKOMAK_SHOP)
+
+
+def preberi_zito():
+    return preberi_proverka("Zito", ZITO, ZITO_SHOP)
 
 
 def preberi_kam_pdf(besedilo):
@@ -230,7 +242,7 @@ def preberi_kipper():
 
 VERIGE = [("Ramstore", preberi_ramstore, 8000), ("Vero", preberi_vero, 5000),
           ("Stokomak", preberi_stokomak, 2000), ("Kam", preberi_kam, 800),
-          ("Kipper", preberi_kipper, 1500)]
+          ("Kipper", preberi_kipper, 1500), ("Zito", preberi_zito, 2500)]
 
 
 def zberi():
