@@ -149,7 +149,10 @@ def naredi_skupine(izdelki, odobreni=(), zanesljivo=0.75):
         return "g" + hashlib.sha1("|".join(sorted(clani)).encode()).hexdigest()[:11]
 
     for clani, ocena in poisci_skupine(vhod):
-        if ocena >= zanesljivo:
+        # a little less sure is enough when every product names its size (and the sizes agree: poisci_skupine checks that);
+        # of the matches looked at by a person, all of those were right
+        z_velikostjo = ocena >= 0.65 and all(normaliziraj(vhod[i][1])[1] is not None for i in clani)
+        if ocena >= zanesljivo or z_velikostjo:
             c = [ids[i] for i in clani]
             sid = skupina_id(c)
             izhod.extend((x, sid, ocena, False) for x in c)
