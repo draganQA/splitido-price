@@ -318,7 +318,7 @@ def skupine_za_pisanje(izdelki, cene, datum, drzava=DRZAVA):
     from ujemanje_mk import naredi_skupine
     pot = odobreni_pot(drzava)
     odobreni = json.load(open(pot, encoding="utf-8")) if os.path.exists(pot) else []
-    vhod = [(c["ean"], c["veriga"], izdelki[c["ean"]]["ime"]) for c in cene if c["ean"] in izdelki]
+    vhod = [(c["ean"], c["veriga"], izdelki[c["ean"]]["ime"], c["cena"]) for c in cene if c["ean"] in izdelki]
     return [{"drzava": drzava, "ean": e, "skupina": g, "ocena": round(o, 2), "potrjeno": p, "posodobljeno": datum}
             for e, g, o, p in naredi_skupine(vhod, odobreni)]
 

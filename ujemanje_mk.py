@@ -133,13 +133,26 @@ def poisci_skupine(izdelki, prag=0.55, zanesljivo=0.75):
     return [(sorted(c), round(min_ocena[k], 2)) for k, c in skupine.items() if len(c) >= 2]
 
 
+PAKET = re.compile(r"(?<![\d.])(\d+)\s*/\s*1(?!\d)|(?<![\d.])1\s*/\s*(\d+)(?!\d)")
+
+
+def razlicen_paket(imena):
+    """Do the names state different pack counts ("3/1" and "12/1")?"""
+    p = [{int(a or b) for a, b in PAKET.findall(i)} for i in imena]
+    p = [x for x in p if x]
+    return len(p) >= 2 and any(x != p[0] for x in p)
+
+
 def naredi_skupine(izdelki, odobreni=(), zanesljivo=0.75):
-    """izdelki: list of (id, chain, name). odobreni: groups (lists of ids) a person has looked at and found right,
+    """izdelki: list of (id, chain, name) or (id, chain, name, price). odobreni: groups (lists of ids) a person has looked at and found right,
     for the matches the rules are less sure of. -> list of (id, group id, score, confirmed)."""
     import hashlib
     videni = {}
-    for id_, veriga, ime in izdelki:
+    cene = {}
+    for id_, veriga, ime, *cena in izdelki:
         videni.setdefault(id_, (veriga, ime))
+        if cena and cena[0]:
+            cene.setdefault(id_, cena[0])
     ids = list(videni)
     vhod = [(videni[i][0], videni[i][1], 0) for i in ids]
     izhod = []
@@ -152,7 +165,11 @@ def naredi_skupine(izdelki, odobreni=(), zanesljivo=0.75):
         # a little less sure is enough when every product names its size (and the sizes agree: poisci_skupine checks that);
         # of the matches looked at by a person, all of those were right
         z_velikostjo = ocena >= 0.65 and all(normaliziraj(vhod[i][1])[1] is not None for i in clani)
-        if ocena >= zanesljivo or z_velikostjo:
+        # and from 0.70 when the prices of the products are close (looked at by a person: 157 of 168 were right)
+        c_ = [ids[i] for i in clani]
+        pr = [cene[x] for x in c_ if x in cene]
+        blizu_cene = ocena >= 0.70 and len(pr) == len(c_) and max(pr) / min(pr) <= 1.4 and not razlicen_paket(videni[x][1] for x in c_)
+        if ocena >= zanesljivo or z_velikostjo or blizu_cene:
             c = [ids[i] for i in clani]
             sid = skupina_id(c)
             izhod.extend((x, sid, ocena, False) for x in c)
