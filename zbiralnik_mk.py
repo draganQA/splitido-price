@@ -308,21 +308,23 @@ def zberi():
     return izdelki, list(cene.values()), stevilo, napake
 
 
-ODOBRENI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "mk_odobreni.json")
+def odobreni_pot(drzava):
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", drzava.lower() + "_odobreni.json")
 
 
-def skupine_za_pisanje(izdelki, cene, datum):
+def skupine_za_pisanje(izdelki, cene, datum, drzava=DRZAVA):
     """Rows for javni_skupine: the same product in several chains, found by name (see ujemanje_mk.py). The matches the
     rules are less sure of count only when a person has approved them (data/mk_odobreni.json)."""
     from ujemanje_mk import naredi_skupine
-    odobreni = json.load(open(ODOBRENI, encoding="utf-8")) if os.path.exists(ODOBRENI) else []
+    pot = odobreni_pot(drzava)
+    odobreni = json.load(open(pot, encoding="utf-8")) if os.path.exists(pot) else []
     vhod = [(c["ean"], c["veriga"], izdelki[c["ean"]]["ime"]) for c in cene if c["ean"] in izdelki]
-    return [{"drzava": DRZAVA, "ean": e, "skupina": g, "ocena": round(o, 2), "potrjeno": p, "posodobljeno": datum}
+    return [{"drzava": drzava, "ean": e, "skupina": g, "ocena": round(o, 2), "potrjeno": p, "posodobljeno": datum}
             for e, g, o, p in naredi_skupine(vhod, odobreni)]
 
 
-def izbrisi_stare_skupine(url, kljuc, datum):
-    q = urllib.parse.urlencode({"drzava": f"eq.{DRZAVA}", "posodobljeno": f"lt.{datum}"})
+def izbrisi_stare_skupine(url, kljuc, datum, drzava=DRZAVA):
+    q = urllib.parse.urlencode({"drzava": f"eq.{drzava}", "posodobljeno": f"lt.{datum}"})
     zahteva = urllib.request.Request(f"{url}/rest/v1/javni_skupine?{q}", method="DELETE", headers={
         "apikey": kljuc, "Authorization": f"Bearer {kljuc}", "Prefer": "return=minimal"})
     urllib.request.urlopen(zahteva, timeout=120).read()

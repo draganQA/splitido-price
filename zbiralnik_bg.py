@@ -169,6 +169,14 @@ def main():
     pisi(url, kljuc, "javni_izdelki", list(izdelki.values()), "drzava,ean")
     pisi(url, kljuc, "javne_cene", cene, "drzava,ean,veriga")
     pocisti(url, kljuc, datum_cen, DRZAVA)
+    try:
+        from zbiralnik_mk import izbrisi_stare_skupine, skupine_za_pisanje
+        skupine = skupine_za_pisanje(izdelki, cene, datum_cen, DRZAVA)
+        pisi(url, kljuc, "javni_skupine", skupine, "drzava,ean")
+        izbrisi_stare_skupine(url, kljuc, datum_cen, DRZAVA)
+        print(f"Groups of the same product: {len({s['skupina'] for s in skupine})}")
+    except Exception as e:  # noqa: BLE001  (the prices are already written; a missing table must not fail the run)
+        print("  ! groups not written:", e)
     print("Done.")
     # A chain that reports only part of its shops on some days (dm did: 24 shops, 267 products) is left out
     # for the day and is no reason to fail the run: fail only when most chains are missing.
