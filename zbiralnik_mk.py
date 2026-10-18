@@ -145,8 +145,14 @@ def preberi_proverka(veriga, url, trgovina):
     """A chain's table on a proverkanaceni.mk portal (the same page for several chains), 100 products to a page."""
     izhod = []
     for stran in range(1, 200):
-        s = prenesi(url.format(page=stran, shop=trgovina))
-        vrstice = [c for c in vrstice_tabele(s or "") if len(c) >= 6]
+        vrstice = []
+        for poskus in range(3):
+            # an empty page may be the end of the list or a busy portal: ask again before believing it is the end
+            s = prenesi(url.format(page=stran, shop=trgovina))
+            vrstice = [c for c in vrstice_tabele(s or "") if len(c) >= 6]
+            if vrstice:
+                break
+            time.sleep(8)
         if not vrstice:
             break
         for c in vrstice:
