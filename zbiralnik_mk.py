@@ -308,6 +308,26 @@ def zberi():
     return izdelki, list(cene.values()), stevilo, napake
 
 
+ODOBRENI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "mk_odobreni.json")
+
+
+def skupine_za_pisanje(izdelki, cene, datum):
+    """Rows for javni_skupine: the same product in several chains, found by name (see ujemanje_mk.py). The matches the
+    rules are less sure of count only when a person has approved them (data/mk_odobreni.json)."""
+    from ujemanje_mk import naredi_skupine
+    odobreni = json.load(open(ODOBRENI, encoding="utf-8")) if os.path.exists(ODOBRENI) else []
+    vhod = [(c["ean"], c["veriga"], izdelki[c["ean"]]["ime"]) for c in cene if c["ean"] in izdelki]
+    return [{"drzava": DRZAVA, "ean": e, "skupina": g, "ocena": round(o, 2), "potrjeno": p, "posodobljeno": datum}
+            for e, g, o, p in naredi_skupine(vhod, odobreni)]
+
+
+def izbrisi_stare_skupine(url, kljuc, datum):
+    q = urllib.parse.urlencode({"drzava": f"eq.{DRZAVA}", "posodobljeno": f"lt.{datum}"})
+    zahteva = urllib.request.Request(f"{url}/rest/v1/javni_skupine?{q}", method="DELETE", headers={
+        "apikey": kljuc, "Authorization": f"Bearer {kljuc}", "Prefer": "return=minimal"})
+    urllib.request.urlopen(zahteva, timeout=120).read()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -332,6 +352,13 @@ def main():
     pisi(url, kljuc, "javni_izdelki", list(izdelki.values()), "drzava,ean")
     pisi(url, kljuc, "javne_cene", cene, "drzava,ean,veriga")
     pocisti(url, kljuc, datum, DRZAVA)
+    try:
+        skupine = skupine_za_pisanje(izdelki, cene, datum)
+        pisi(url, kljuc, "javni_skupine", skupine, "drzava,ean")
+        izbrisi_stare_skupine(url, kljuc, datum)
+        print(f"Groups of the same product: {len({s['skupina'] for s in skupine})}")
+    except Exception as e:  # noqa: BLE001  (the prices are already written; a missing table must not fail the run)
+        print("  ! groups not written:", e)
     print("Done.")
     if napake:
         sys.exit("Some chains failed: " + "; ".join(napake))
