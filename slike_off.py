@@ -1,27 +1,30 @@
-"""Looks up product photos on Open Food Facts (CC BY-SA, https://openfoodfacts.org) for the catalogue's barcodes
-and writes them to javne_slike. Run daily: each run takes the next batch of barcodes it has not looked at yet
-(or looked at without success more than 60 days ago) and stays well below Open Food Facts' request limits.
+"""Product photos from Open Food Facts (CC BY-SA, https://openfoodfacts.org) for the catalogue's barcodes.
 
-    python slike_off.py --dry-run --max 200     # look up 200 barcodes, print the coverage, write nothing
-    python slike_off.py                         # a normal run (needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+Open Food Facts asks bulk users to take their daily data export instead of asking its servers one product at a
+time, so this downloads that one file (about 1.5 GB, gzipped CSV), reads through it once, keeps the front photo of
+the barcodes the catalogue has (Slovenia, Croatia, Serbia) and writes them to javne_slike. A barcode with no photo
+is written too (slika null), so the coverage can be counted. About ten minutes; run it weekly.
+
+    python slike_off.py --dry-run                 # download, count the coverage, write nothing
+    python slike_off.py                           # a normal run (needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+    python slike_off.py --dump file.csv.gz        # read a file already downloaded
 """
 import argparse
+import csv
 import datetime
+import gzip
+import io
 import json
 import os
 import re
 import sys
-import time
-import urllib.error
-import urllib.parse
 import urllib.request
 
 from skupno import pisi
 
 # Open Food Facts asks for an identifying User-Agent: app name, version and a contact.
 UA = "Splitido/1.0 (https://splitido.com; info@splitido.com)"
-OFF = "https://world.openfoodfacts.org/api/v2/product/{}.json?fields=code,image_front_small_url"
-PRESLEDEK = 0.8  # seconds between two lookups: ~75 a minute, below the 100/min limit for product reads
+IZVOZ = "https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/en.openfoodfacts.org.products.csv.gz"
 STRAN = 1000
 EAN = re.compile(r"^\d{8,14}$")
 PREFIKS = "https://images.openfoodfacts.org/"
@@ -41,32 +44,47 @@ def preberi(url, kljuc, pot):
         od += STRAN
 
 
-def poisci(ean):
-    """(True, url or None) for a definite answer, (False, None) when it should be tried again another day."""
-    zahteva = urllib.request.Request(OFF.format(ean), headers={"User-Agent": UA})
-    for poskus in range(2):
-        try:
-            odgovor = json.loads(urllib.request.urlopen(zahteva, timeout=30).read())
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return True, None
-            if e.code == 429 and poskus == 0:
-                time.sleep(60)
-                continue
-            return False, None
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-            return False, None
-        slika = (odgovor.get("product") or {}).get("image_front_small_url")
-        if slika and slika.startswith(PREFIKS):
-            return True, slika
-        return True, None
-    return False, None
+def brez_nicel(ean):
+    """Open Food Facts keeps some barcodes with leading zeros and some without: compare without them."""
+    return ean.lstrip("0")
+
+
+def vrstice_izvoza(pot):
+    """The rows of the export (a local file or the download), as lists of fields."""
+    if pot:
+        tok = gzip.open(pot, "rb")
+    else:
+        zahteva = urllib.request.Request(IZVOZ, headers={"User-Agent": UA})
+        tok = gzip.GzipFile(fileobj=urllib.request.urlopen(zahteva, timeout=120))
+    csv.field_size_limit(10 ** 9)
+    besedilo = io.TextIOWrapper(tok, encoding="utf-8", errors="replace", newline="")
+    return csv.reader(besedilo, delimiter="\t", quoting=csv.QUOTE_NONE)
+
+
+def poisci_slike(iskani, pot):
+    """{barcode without leading zeros: photo url} for the wanted ones that have a front photo."""
+    vrstice = vrstice_izvoza(pot)
+    glava = next(vrstice)
+    i_koda, i_slika = glava.index("code"), glava.index("image_small_url")
+    najdeno, pregledano = {}, 0
+    for vrstica in vrstice:
+        pregledano += 1
+        if len(vrstica) <= i_slika:
+            continue
+        koda = brez_nicel(vrstica[i_koda])
+        slika = vrstica[i_slika]
+        if koda in iskani and slika.startswith(PREFIKS) and "/front_" in slika:
+            najdeno[koda] = slika
+        if pregledano % 500_000 == 0:
+            print(f"  {pregledano} products read, {len(najdeno)} photos found", flush=True)
+    print(f"{pregledano} products in the export, {len(najdeno)} photos found for our barcodes", flush=True)
+    return najdeno
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--max", type=int, default=2500, help="how many barcodes to look up in this run")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--dump", help="a downloaded export (en.openfoodfacts.org.products.csv.gz) instead of downloading it")
     args = ap.parse_args()
 
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -76,32 +94,17 @@ def main():
 
     izdelki = preberi(url, kljuc, "javni_izdelki?select=ean&drzava=in.(SI,HR,RS)")
     eani = sorted({r["ean"] for r in izdelki if EAN.match(r["ean"] or "")})
-    znani = {r["ean"]: r for r in preberi(url, kljuc, "javne_slike?select=ean,slika,preverjeno")}
-    meja = (datetime.date.today() - datetime.timedelta(days=60)).isoformat()
-    na_vrsti = [e for e in eani if e not in znani or (znani[e]["slika"] is None and znani[e]["preverjeno"] < meja)]
-    s_sliko = sum(1 for e in eani if e in znani and znani[e]["slika"])
-    print(f"{len(eani)} barcodes in the catalogue; {len(znani)} looked up so far ({s_sliko} with a photo); "
-          f"{len(na_vrsti)} waiting, taking {min(len(na_vrsti), args.max)}", flush=True)
+    print(f"{len(eani)} barcodes in the catalogue", flush=True)
+    slike = poisci_slike({brez_nicel(e) for e in eani}, args.dump)
 
-    vrstice, najdeno, brez = [], 0, 0
-    for i, ean in enumerate(na_vrsti[:args.max]):
-        dokoncno, slika = poisci(ean)
-        if dokoncno:
-            vrstice.append({"ean": ean, "slika": slika, "preverjeno": datetime.date.today().isoformat()})
-            najdeno += 1 if slika else 0
-            brez += 0 if slika else 1
-        if len(vrstice) >= 200 and not args.dry_run:
-            pisi(url, kljuc, "javne_slike", vrstice, "ean")
-            vrstice = []
-        if i % 100 == 99:
-            print(f"  {i + 1} looked up: {najdeno} with a photo, {brez} without", flush=True)
-        time.sleep(PRESLEDEK)
+    danes = datetime.date.today().isoformat()
+    vrstice = [{"ean": e, "slika": slike.get(brez_nicel(e)), "preverjeno": danes} for e in eani]
+    z_sliko = sum(1 for v in vrstice if v["slika"])
+    delez = f"{100 * z_sliko / len(vrstice):.0f}%" if vrstice else "-"
+    print(f"Done: {z_sliko} with a photo, {len(vrstice) - z_sliko} without ({delez} coverage)"
+          + (" [dry run, nothing written]" if args.dry_run else ""))
     if vrstice and not args.dry_run:
         pisi(url, kljuc, "javne_slike", vrstice, "ean")
-    gledani = najdeno + brez
-    delez = f"{100 * najdeno / gledani:.0f}%" if gledani else "-"
-    print(f"Done: {najdeno} with a photo, {brez} without ({delez} coverage in this batch)"
-          + (" [dry run, nothing written]" if args.dry_run else ""))
 
 
 if __name__ == "__main__":
