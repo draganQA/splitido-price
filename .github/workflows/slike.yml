@@ -1,0 +1,28 @@
+name: Product photos (Open Food Facts)
+
+# Once a day: looks up photos for the next few thousand barcodes of the catalogue on Open Food Facts
+# (CC BY-SA). Reads and writes only the small table javne_slike. Free on a public repository.
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      max:
+        description: "How many barcodes to look up"
+        default: "2500"
+
+jobs:
+  slike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Look up and write
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MAX: ${{ github.event.inputs.max || '2500' }}
+        run: python slike_off.py --max "$MAX"
