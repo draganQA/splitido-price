@@ -37,6 +37,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zoneinfo
 
 from skupno import decimal, pisi, pocisti
 
@@ -258,7 +259,35 @@ def izdelki_spar(stran):
         e = p.get("ean")
         e = reference.get(e[1:]) if isinstance(e, str) and e.startswith("$") else e
         p["ean"] = veljaven_ean(e[0] if isinstance(e, list) and e else e)
+        pr = p.get("promotion")
+        p["promotion"] = reference.get(pr[1:]) if isinstance(pr, str) and pr.startswith("$") else pr
     return izdelki
+
+
+LJUBLJANA = zoneinfo.ZoneInfo("Europe/Ljubljana")
+
+
+def spar_velja_do(promocija):
+    """Last day of a Spar offer: the date of `endDateTime` in Ljubljana time, only for an active special price.
+
+    >>> spar_velja_do({"type": "specialPrice", "isActive": True, "endDateTime": "2026-11-10T21:59:59.000+00:00"})
+    '2026-11-10'
+    >>> spar_velja_do({"type": "specialPrice", "isActive": True, "endDateTime": "2026-11-10T23:30:00.000+00:00"})
+    '2026-11-11'
+    >>> spar_velja_do({"type": "specialPrice", "isActive": False, "endDateTime": "2026-11-10T21:59:59.000+00:00"}) is None
+    True
+    >>> spar_velja_do("$1f") is None
+    True
+    """
+    if not isinstance(promocija, dict) or promocija.get("type") != "specialPrice" or promocija.get("isActive") is not True:
+        return None
+    try:
+        konec = datetime.datetime.fromisoformat(str(promocija.get("endDateTime")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if konec.tzinfo is None:
+        konec = konec.replace(tzinfo=datetime.timezone.utc)
+    return konec.astimezone(LJUBLJANA).date().isoformat()
 
 
 def zberi_spar(omejitev):
@@ -289,7 +318,8 @@ def zberi_spar(omejitev):
             prej = decimal(str(p.get("previousPrice") or ""))
             akcija = bool(prej and prej > cena)
             znamka = lepo_ime(p["brand"]) if p.get("brand") else None
-            izhod[str(p["sku"])] = (str(p["sku"]), ime, znamka, None, cena, akcija, prej if akcija else None, p.get("ean"))
+            izhod[str(p["sku"])] = (str(p["sku"]), ime, znamka, None, cena, akcija, prej if akcija else None, p.get("ean"),
+                                    None, None, spar_velja_do(p.get("promotion")) if akcija else None)
         if (i + 1) % 50 == 0:
             print(f"  spar: {i + 1}/{len(kategorije)}, products: {len(izhod)}", flush=True)
         time.sleep(PREMOR["spar"])
@@ -366,8 +396,47 @@ def mercator_json(pot, parametri=None):
             time.sleep(10 * (poskus + 1))
 
 
+def mercator_datum(s):
+    """"20261116002749" (YYYYMMDDhhmmss, local time) -> "2026-11-16", or None.
+
+    >>> mercator_datum("20261116002749")
+    '2026-11-16'
+    >>> mercator_datum("1970-01-01") is None
+    True
+    >>> mercator_datum(None) is None
+    True
+    """
+    s = str(s or "")
+    if not re.match(r"^\d{14}$", s):
+        return None
+    try:
+        return datetime.date(int(s[:4]), int(s[4:6]), int(s[6:8])).isoformat()
+    except ValueError:
+        return None
+
+
+def mercator_velja_do(popusti, danes=None):
+    """Last day of the offer from a product's `discounts`: only "pika_discount" (card) and "web_shop" entries count.
+    Both present: the earliest end that is not in the past; one present: its own end.
+
+    >>> d = [{"group_type": "pika_discount", "valid_to": "20261116002749"}, {"group_type": "web_shop", "valid_to": "20261110235959"}, {"group_type": "eco", "valid_to": "20261101000000"}]
+    >>> mercator_velja_do(d, "2026-11-09")
+    '2026-11-10'
+    >>> mercator_velja_do(d, "2026-11-12")
+    '2026-11-16'
+    >>> mercator_velja_do(d[:1], "2026-11-09")
+    '2026-11-16'
+    >>> mercator_velja_do(d[2:], "2026-11-09") is None
+    True
+    """
+    danes = danes or datetime.date.today().isoformat()
+    konci = [mercator_datum(d.get("valid_to")) for d in popusti or [] if isinstance(d, dict) and d.get("group_type") in ("pika_discount", "web_shop")]
+    konci = sorted(k for k in konci if k and k >= danes)
+    return konci[0] if konci else None
+
+
 def mercator_izdelek(x):
-    """One catalogue entry -> (id, name, brand, price, regular price or None, barcode, card price or None, category) or None."""
+    """One catalogue entry -> (id, name, brand, price, regular price or None, barcode, card price or None, category, last day of the offer or None) or None."""
     try:
         cena, redna = float(x["current_price"]), float(x.get("normal_price") or 0)
     except (KeyError, TypeError, ValueError):
@@ -381,7 +450,7 @@ def mercator_izdelek(x):
         kartica, cena, redna = cena, redna, 0
     ean = next((e for e in (veljaven_ean(g.get("gtin")) for g in x.get("gtins") or []) if e), None)
     znamka = lepo_ime(x["brand_name"]) if x.get("brand_name") else None
-    return str(x.get("cinv") or x.get("code") or ""), ime, znamka, round(cena, 2), round(redna, 2) if redna > cena else None, ean, round(kartica, 2) if kartica and kartica < cena else None, (x.get("category1") or None)
+    return str(x.get("cinv") or x.get("code") or ""), ime, znamka, round(cena, 2), round(redna, 2) if redna > cena else None, ean, round(kartica, 2) if kartica and kartica < cena else None, (x.get("category1") or None), mercator_velja_do(x.get("discounts"))
 
 
 def zberi_mercator(omejitev):
@@ -413,8 +482,8 @@ def zberi_mercator(omejitev):
     for x in najdeno.values():
         p = mercator_izdelek(x)
         if p and p[0]:
-            id_, ime, znamka, cena, redna, ean, kartica, kategorija = p
-            izhod[id_] = (id_, ime, znamka, None, cena, bool(redna), redna, ean, kartica, kategorija)
+            id_, ime, znamka, cena, redna, ean, kartica, kategorija, velja_do = p
+            izhod[id_] = (id_, ime, znamka, None, cena, bool(redna), redna, ean, kartica, kategorija, velja_do if (redna or kartica) else None)
     print(f"  mercator: {len(izhod)} with a price")
     return list(izhod.values())
 
@@ -430,10 +499,11 @@ def v_vrstice(ime_verige, seznam):
         koda, ime, znamka, kolicina, cena, akcija, redna, ean_izdelka = vrstica[:8]
         kartica = vrstica[8] if len(vrstica) > 8 else None
         kategorija = vrstica[9] if len(vrstica) > 9 else None
+        velja_do = vrstica[10] if len(vrstica) > 10 else None     # ISO date of the offer's last day, None when unknown
         ean = ean_izdelka or id_izdelka(ime_verige.lower(), koda)
         izdelki[ean] = {"drzava": DRZAVA, "ean": ean, "ime": ime, "znamka": znamka, "kolicina": kolicina, "kategorija": kategorija}
         cene.append({"drzava": DRZAVA, "ean": ean, "veriga": ime_verige, "cena": cena, "akcija": bool(akcija),
-                     "referencna": redna, "najnizja30": None, "sidrena": None, "cena_kartica": kartica})
+                     "referencna": redna, "najnizja30": None, "sidrena": None, "cena_kartica": kartica, "velja_do": velja_do})
     return izdelki, cene
 
 
