@@ -2,7 +2,7 @@
 Usage: python pripravi_mercator.py raw.json data/mercator.json.gz"""
 import datetime, gzip, json, sys
 
-from zbiralnik_si import id_izdelka, lepo_ime, veljaven_ean
+from zbiralnik_si import id_izdelka, lepo_ime, mercator_velja_do, veljaven_ean
 
 DRZAVA = "SI"
 
@@ -34,6 +34,7 @@ def main(vhod, izhod):
         cene.append({"drzava": DRZAVA, "ean": ean, "veriga": "Mercator", "cena": round(sega, 2), "akcija": akcija,
                      "referencna": round(redna, 2) if akcija else None, "najnizja30": None, "sidrena": None,
                      "cena_kartica": round(kartica, 2) if kartica and kartica < sega else None,
+                     "velja_do": mercator_velja_do(x.get("discounts"), danes) if (akcija or kartica) else None,
                      "posodobljeno": danes})
     with gzip.open(izhod, "wt", encoding="utf-8") as f:
         json.dump({"datum": danes, "veriga": "Mercator", "izdelki": list(izdelki.values()), "cene": cene}, f,
